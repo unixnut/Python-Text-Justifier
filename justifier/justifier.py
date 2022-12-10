@@ -195,7 +195,6 @@ def create_folded_para(dest: Generator):
             # (Try to) split the word
             if hypenate_fn and delta > 2 and len(word) >= min_fragment_len * 2:
                 lfragment, rfragment = hypenate_fn(word, delta)
-                line_chunks.append(Chunk(lfragment, " "))
                 delta -= len(lfragment)
             else:
                 lfragment = ""
@@ -207,16 +206,27 @@ def create_folded_para(dest: Generator):
             prevsep = sep
             line_len = len(rfragment)
 
-            # Pad the line
+            # Pad the partial line
             # (Initially, this is done with simple spaces but should use a
             # selection of weighted tweaks instead)
-            if delta > 0:
-                # pad chunks with given numbers
+            while delta > 0:
+                # First, pick words that end with "."
+                full_stop_wordnums = [n for n, chunk in enumerate(line_chunks) if chunk.word.endswith(".")]
+                # Then just pick random words
+                random_wordnums = random.sample(range(len(line_chunks)),
+                                                delta - min(len(full_stop_wordnums), delta))
+                all_wordnums = full_stop_wordnums + random_wordnums
+                delta -= len(all_wordnums)
+
+                # Pad chunks with given numbers
                 ## logger.debug("Padding %d for line ending %s", delta, lfragment)
-                for n in random.sample(range(len(line_chunks) - 1), delta):
+                for n in all_wordnums:
                     new_chunk = Chunk(line_chunks[n].word, line_chunks[n].sep + " ")
                     line_chunks[n] = new_chunk
 
+            # Complete and send the line
+            if lfragment:
+                line_chunks.append(Chunk(lfragment, " "))
             dest.send(line_render(line_chunks))
 
             # Data to be prepended to the next line

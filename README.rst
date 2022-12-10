@@ -1,13 +1,13 @@
-==============
-Text justifier
-==============
+=====================
+Python Text Justifier
+=====================
 
 
 .. image:: https://img.shields.io/pypi/v/justifier.svg
-        :target: https://pypi.python.org/pypi/justifier
+        :target: https://pypi.python.org/pypi/text-justifier
 
-.. image:: https://readthedocs.org/projects/justifier/badge/?version=latest
-        :target: https://justifier.readthedocs.io/en/latest/?badge=latest
+.. image:: https://readthedocs.org/projects/text-justifier/badge/?version=latest
+        :target: https://text-justifier.readthedocs.io/en/latest/?badge=latest
         :alt: Documentation Status
 
 
@@ -17,7 +17,7 @@ Justify and hyphenate text in files and/or standard input
 
 
 * Free software: GNU General Public License v3
-* Documentation: https://justifier.readthedocs.io.
+* Documentation: https://text-justifier.readthedocs.io.
 
 
 Features
