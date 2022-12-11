@@ -12,16 +12,23 @@ from justifier import justifier
 
 @click.command(help="Input to justify")
 @click.option("--width", "-w", type=int, help="Width of text, not counting indent")
+@click.option("--hyphen", "-h", type=str, default="pyphen", help="Hyphenation method")
+@click.option("--no-hyphenate", "-H", type=bool, default=False, help="Hyphenation method")
 @click.option("--debug/--no-debug", "-d", help="Turn on debug mode")
 @click.argument("input", type=click.File(), default="-")
-def main(input: TextIO, width: Optional[int], debug: bool = False):
+def main(input: TextIO, width: Optional[int], hyphen: str, no_hyphenate: bool, debug: bool = False):
     """Console script for justifier."""
 
     master_logger = init_logging(loglevel=(debug and logging.DEBUG or logging.WARNING))
-    
+
     indent = 0
     if width:
         params['right_margin'] = width + indent
+
+    if not no_hyphenate:
+        params['hyphenation'] = hyphen  # FIXME: parameter name
+    else:
+        params['hyphenation'] = None
 
     justifier.init(master_logger)
     justifier.process(input)

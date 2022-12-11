@@ -9,7 +9,7 @@ __author__ = """Alastair Irvine"""
 __email__ = 'alastair@plug.org.au'
 __version__ = '0.1.0'
 
-root_logger: logging.Logger = None
+root_logger = None  # logging.Logger
 params = {}
 
 

@@ -5,12 +5,16 @@ import re
 import logging
 from collections import namedtuple
 import random
+import locale
+
+import pyphen
 
 import justifier   # This package's top-level module
 
 
 # *** DEFINITIONS ***
-logger: logging.Logger = None
+logger = None   # logging.Logger
+pyphen_hyphenator = None   # pyphen.Pyphen
 p = None  # Pipeline
 
 
@@ -28,7 +32,7 @@ class Pipeline:
 
     If a generator is garbage-collected prior to the one before it in the chain
     doing the final send, a StopIteration error will be raised; See
-    https://docs.python.org/3/reference/expressions.html#generator.send 
+    https://docs.python.org/3/reference/expressions.html#generator.send
     """
 
     def __init__(self, *args):
@@ -170,12 +174,26 @@ def create_folded_para(dest: Generator):
         return lfragment, rfragment
 
 
-    hypenate_fn = simple_hypenate
+    def pyphen_hypenate(word: str, delta: int) -> Tuple[str, str]:
+        # Returns either a 2-tuple or None
+        result = pyphen_hyphenator.wrap(word, delta)
+        if result:
+            lfragment, rfragment = result
+            logger.debug("delta is %d for line_len %d (lfragment %s prevsep %s sep %s)",
+                         delta, line_len, lfragment, prevsep, sep)
+            return lfragment, rfragment
+        else:
+            logger.debug("'%s' isn't hyphenatable; delta is %d for line_len %d (prevsep %s sep %s)",
+                         word, delta, line_len, prevsep, sep)
+            raise ValueError("Unhyphenatable word '%s'" % word, word)
+
+
+    hypenate_fn = {'simple': simple_hypenate, 'pyphen': pyphen_hypenate, 'none': None}[justifier.params.get('hyphenation', 'pyphen')]
     right_margin = justifier.params.get('right_margin', 60)
     min_fragment_len = right_margin / 20
-    line_chunks: List[Chunk] = []
+    line_chunks = []  # List[Chunk]
     try:
-        line_len = 0   # Length not including separator part of last Chunk
+        line_len = 0   # Length not including separator part of final Chunk
         prevsep = ""
         # Build a line out of chunk-tuples then render it to a string
         while True:
@@ -189,32 +207,47 @@ def create_folded_para(dest: Generator):
                 else:
                     break
 
-            # If we add a fragment to this line, padding won't be at the end
-            # any more and so won't count as part of the delta
-            delta = right_margin - line_len - len(prevsep)
+            # delta is number of spaces to be added to the line
+            delta = right_margin - line_len
             # (Try to) split the word
             if hypenate_fn and delta > 2 and len(word) >= min_fragment_len * 2:
-                lfragment, rfragment = hypenate_fn(word, delta)
-                delta -= len(lfragment)
+                try:
+                    # If we add a fragment to this line, separator won't be at
+                    # the end any more and so will count against the delta
+                    lfragment, rfragment = hypenate_fn(word, delta - len(prevsep))
+
+                    # Hyphenation succeeded
+                    line_chunks.append(Chunk(lfragment, " "))
+                    delta -= len(lfragment) + len(prevsep)
+                except ValueError:
+                    lfragment = ""
             else:
+                logger.debug("not hyphenating; delta is %d for line_len %d of %d words (prevsep %s sep %s)",
+                                delta, line_len, len(line_chunks), prevsep, sep)
                 lfragment = ""
+
+            if not lfragment:
+                # No fragment added to this line; whole word is carried over to
+                # the next line and so delta includes width of prevsep
                 rfragment = word
-                # No fragment added to this line so add the separator back into the delta
-                delta += len(prevsep)
 
             # Seed the next iteration
             prevsep = sep
             line_len = len(rfragment)
 
             # Pad the partial line
+            num_words = len(line_chunks)
             # (Initially, this is done with simple spaces but should use a
             # selection of weighted tweaks instead)
             while delta > 0:
                 # First, pick words that end with "."
-                full_stop_wordnums = [n for n, chunk in enumerate(line_chunks) if chunk.word.endswith(".")]
+                full_stop_wordnums = [n for n in range(num_words - 1) if line_chunks[n].word.endswith(".")]
                 # Then just pick random words
-                random_wordnums = random.sample(range(len(line_chunks)),
-                                                delta - min(len(full_stop_wordnums), delta))
+                if delta > len(full_stop_wordnums):
+                    sample_count = min(num_words - 1, delta - len(full_stop_wordnums))
+                    random_wordnums = random.sample(range(num_words - 1), sample_count)
+                else:
+                    random_wordnums = []
                 all_wordnums = full_stop_wordnums + random_wordnums
                 delta -= len(all_wordnums)
 
@@ -224,12 +257,10 @@ def create_folded_para(dest: Generator):
                     new_chunk = Chunk(line_chunks[n].word, line_chunks[n].sep + " ")
                     line_chunks[n] = new_chunk
 
-            # Complete and send the line
-            if lfragment:
-                line_chunks.append(Chunk(lfragment, " "))
+            # Send the finished line
             dest.send(line_render(line_chunks))
 
-            # Data to be prepended to the next line
+            # Text to be prepended to the next line
             if rfragment:
                 line_chunks = [Chunk(rfragment, prevsep)]
             else:
@@ -295,9 +326,12 @@ def print_paras():
 
 
 def init(parent_logger: logging.Logger):
-    global p, logger
+    global p, logger, pyphen_hyphenator
 
     logger = parent_logger.getChild("justifier")
+
+    if justifier.params.get('hyphenation') == 'pyphen':
+        pyphen_hyphenator = pyphen.Pyphen(lang=locale.getlocale()[0])
 
     # reformat() uses create_folded_para() and collate_lines() in a sub-pipeline
     p = Pipeline(get_paras, reformat, print_paras)
