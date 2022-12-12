@@ -189,8 +189,8 @@ def create_folded_para(dest: Generator):
 
 
     hypenate_fn = {'simple': simple_hypenate, 'pyphen': pyphen_hypenate, 'none': None}[justifier.params.get('hyphenation', 'pyphen')]
-    right_margin = justifier.params.get('right_margin', 60)
-    min_fragment_len = right_margin / 20
+    line_width = justifier.params.get('line_width', 60)
+    min_fragment_len = min(3, line_width / 20)
     line_chunks = []  # List[Chunk]
     try:
         line_len = 0   # Length not including separator part of final Chunk
@@ -200,7 +200,7 @@ def create_folded_para(dest: Generator):
             # Pull enough words to completely fill a line
             while True:
                 word, sep = yield
-                if line_len + len(prevsep) + len(word) <= right_margin:
+                if line_len + len(prevsep) + len(word) <= line_width:
                     line_chunks.append(Chunk(word, sep))
                     line_len += len(prevsep) + len(word)
                     prevsep = sep
@@ -208,9 +208,9 @@ def create_folded_para(dest: Generator):
                     break
 
             # delta is number of spaces to be added to the line
-            delta = right_margin - line_len
+            delta = line_width - line_len
             # (Try to) split the word
-            if hypenate_fn and delta > 2 and len(word) >= min_fragment_len * 2:
+            if hypenate_fn and delta-len(prevsep) >= min_fragment_len and len(word) >= min_fragment_len * 2:
                 try:
                     # If we add a fragment to this line, separator won't be at
                     # the end any more and so will count against the delta
@@ -223,7 +223,7 @@ def create_folded_para(dest: Generator):
                     lfragment = ""
             else:
                 logger.debug("not hyphenating; delta is %d for line_len %d of %d words (prevsep %s sep %s)",
-                                delta, line_len, len(line_chunks), prevsep, sep)
+                             delta, line_len, len(line_chunks), prevsep, sep)
                 lfragment = ""
 
             if not lfragment:
