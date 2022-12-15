@@ -10,6 +10,7 @@ import locale
 import pyphen
 
 import justifier   # This package's top-level module
+from . import utils
 
 
 # *** DEFINITIONS ***
@@ -22,44 +23,6 @@ p = None  # Pipeline
 Chunk = namedtuple('Chunk', ['word', 'sep'])
 
 
-class Pipeline:
-    """
-    Automatically build a chain of generators.
-
-    Warning: Generator functions must NOT call `dest.close()` in their
-    GeneratorExit catch block or `finally` block.  The chain is closed in order
-    by this class's close() method.
-
-    If a generator is garbage-collected prior to the one before it in the chain
-    doing the final send, a StopIteration error will be raised; See
-    https://docs.python.org/3/reference/expressions.html#generator.send
-    """
-
-    def __init__(self, *args):
-        self.chain = []
-        prevdest = {}
-        # Create and start the generators, in reverse order
-        for generator_class in reversed(args):
-            logger.debug(repr(generator_class))
-            generator = generator_class(**prevdest)
-            generator.send(None)
-            prevdest = {'dest': generator}
-            self.chain.insert(0, generator)
-
-
-    def process(self, input: Iterable[str]):
-        for line in input:
-            self.chain[0].send(line.rstrip())
-
-
-    def close(self):
-        """
-        Close generators in order so that none are left trying to send() to
-        a closed generator (happens during random garbage collection and raises
-        a StopIteration error).
-        """
-        for g in self.chain:
-            g.close()
 
 
 # *** FUNCTIONS ***
@@ -103,7 +66,7 @@ def reformat(dest: Generator):
     collate_lines() generators to handle each one.
     """
 
-    def chunk_to_words(s: str, dest: Generator):
+    def chunk_to_words(s: str, dest: Union[Generator, utils.Pipeline]):
         logger.debug("chunk_to_words started; %s", repr(dest))
 
         # Do we need to chop the last separator?
@@ -112,8 +75,10 @@ def reformat(dest: Generator):
                 chunk = (match.group(1), match.group(2) or "")
             else:
                 chunk = ("", "")
-            g.send(chunk)
+            dest.send(chunk)
 
+
+    # -- reformat() --
     sep_regex = justifier.params.get('sep_regex', r"\s")
     reo = re.compile("((?:(?!%s).)+)((?:%s)*)" % (sep_regex, sep_regex))
     try:
@@ -121,19 +86,24 @@ def reformat(dest: Generator):
             para = yield
             ## logger.debug(para)
 
-            # Mini-pipeline that fans-in to this generator's dest
-            # Create and start the generators in reverse order
+            # Fan-in to this generator's `dest`
             coll = collate_lines(dest)
             coll.send(None)
-            g = create_folded_para(coll)
-            g.send(None)
+
+            # Create a mini-pipeline just for this paragraph
+            # (entities are created in reverse order)
+            if justifier.params.get('indent') > 0:
+                p = utils.Pipeline(create_folded_para,
+                                   (indent_lines, {'indent': justifier.params['indent']}),
+                                   coll)
+            else:
+                p = utils.Pipeline(create_folded_para, coll)
 
             # Run the mini-pipeline
-            chunk_to_words(para, g)
+            chunk_to_words(para, p)
 
             # Clean up the mini-pipeline in forwards order
-            g.close()
-            coll.close()
+            p.close()
 
     except GeneratorExit:
         pass
@@ -147,7 +117,7 @@ def create_folded_para(dest: Generator):
     @warning Not a main-chain generator, so do NOT close `dest`.
     """
 
-    def line_render(a: List[Chunk]):
+    def line_render(a: List[Chunk]) -> str:
         """
         Join all chunks (word and separator) together into a line, without the
         last separator.
@@ -188,6 +158,7 @@ def create_folded_para(dest: Generator):
             raise ValueError("Unhyphenatable word '%s'" % word, word)
 
 
+    # -- create_folded_para() --
     hypenate_fn = {'simple': simple_hypenate, 'pyphen': pyphen_hypenate, 'none': None}[justifier.params.get('hyphenation', 'pyphen')]
     line_width = justifier.params.get('line_width', 60)
     min_fragment_len = min(3, line_width / 20)
@@ -210,7 +181,8 @@ def create_folded_para(dest: Generator):
             # delta is number of spaces to be added to the line
             delta = line_width - line_len
             # (Try to) split the word
-            if hypenate_fn and delta-len(prevsep) >= min_fragment_len and len(word) >= min_fragment_len * 2:
+            if hypenate_fn and delta-len(prevsep) >= min_fragment_len and \
+                    len(word) >= min_fragment_len * 2:
                 try:
                     # If we add a fragment to this line, separator won't be at
                     # the end any more and so will count against the delta
@@ -240,22 +212,31 @@ def create_folded_para(dest: Generator):
             # (Initially, this is done with simple spaces but should use a
             # selection of weighted tweaks instead)
             while delta > 0:
-                # First, pick words that end with "."
+                # First, pick words that end with "." -- count might be > delta
                 full_stop_wordnums = [n for n in range(num_words - 1) if line_chunks[n].word.endswith(".")]
                 # Then just pick random words
-                if delta > len(full_stop_wordnums):
+                if num_words > 1 and delta > len(full_stop_wordnums):
                     sample_count = min(num_words - 1, delta - len(full_stop_wordnums))
                     random_wordnums = random.sample(range(num_words - 1), sample_count)
                 else:
-                    random_wordnums = []
-                all_wordnums = full_stop_wordnums + random_wordnums
-                delta -= len(all_wordnums)
+                    # Slice the array if not all needed
+                    if len(full_stop_wordnums) > delta:
+                        full_stop_wordnums = full_stop_wordnums[0:delta]
 
-                # Pad chunks with given numbers
-                ## logger.debug("Padding %d for line ending %s", delta, lfragment)
-                for n in all_wordnums:
-                    new_chunk = Chunk(line_chunks[n].word, line_chunks[n].sep + " ")
-                    line_chunks[n] = new_chunk
+                    random_wordnums = []
+
+                all_wordnums = full_stop_wordnums + random_wordnums
+                if all_wordnums:
+                    delta -= len(all_wordnums)
+
+                    # Pad chunks with given numbers
+                    ## logger.debug("Padding %d for line ending %s", delta, lfragment)
+                    for n in all_wordnums:
+                        new_chunk = Chunk(line_chunks[n].word, line_chunks[n].sep + " ")
+                        line_chunks[n] = new_chunk
+                else:
+                    # Give up iterating if no padding opportunities were found
+                    break
 
             # Send the finished line
             dest.send(line_render(line_chunks))
@@ -279,7 +260,30 @@ def create_folded_para(dest: Generator):
             dest.send(line_render(line_chunks))
 
 
+def indent_lines(indent: int, dest: Generator):
+    prefix = " " * indent
+
+    try:
+        while True:
+            line = yield
+            dest.send(prefix + line)
+
+    except StopIteration:
+        # Ignore yield failure due to running out of lines
+        pass
+
+    except GeneratorExit:
+        pass
+
+
 def collate_lines(dest: Generator):
+    """
+    Generator that takes a series of items and collects them into a single
+    string separated by newlines, which is sent to dest.
+
+    TO-DO: If None is received, assemble and send the current collection then restart
+    """
+
     try:
         lines = []
         while True:
@@ -333,14 +337,14 @@ def init(parent_logger: logging.Logger):
     if justifier.params.get('hyphenation') == 'pyphen':
         pyphen_hyphenator = pyphen.Pyphen(lang=locale.getlocale()[0])
 
-    # reformat() uses create_folded_para() and collate_lines() in a sub-pipeline
-    p = Pipeline(get_paras, reformat, print_paras)
+    # reformat() uses create_folded_para(), possibly indent_lines() and collate_lines() in a sub-pipeline
+    p = utils.Pipeline(get_paras, reformat, print_paras)
     ## print(p.chain[0])
     ## p = FixedPipeline()
 
 
 def process(input: Iterable[str]):
-    p.process(input)
+    p.send_lines(input)
 
 
 def finalise():

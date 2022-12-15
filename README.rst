@@ -23,7 +23,17 @@ Justify and hyphenate text in files and/or standard input
 Features
 --------
 
-* TODO
+* Can centre text according to the screen/terminal width
+* Indent text
+
+TO DO
+-----
+* Em dashes (— or --) should be used padded before random padding is done
+* Don't hyphenate URLs
+* Extract URLs, replace with placeholders and dump after paragraph
+  * Use Markdown style or something similar i.e. 
+    [text](url) -> [text][URL_PLACEHOLDER] and [URL_PLACEHOLDER]: url
+    [url] -> [0] and [0]: url
 
 Algorithm
 ---------
