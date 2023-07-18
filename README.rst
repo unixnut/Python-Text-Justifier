@@ -16,6 +16,10 @@ Python Text Justifier
 Justify and hyphenate text in files and/or standard input.  The program can be
 invoked as either **text-justifier** or **justify** .
 
+Installation/Upgrade
+--------------------
+**``pip3 install -U text-justifier``**
+
 Options
 -------
 ``-w``, ``--width *INTEGER*``
@@ -70,6 +74,8 @@ TO DO
 * Option (-f *n*) to add a first-line indent to each paragraph
 
 * Option (-n) to split paragraphs on newline instead of blank lines
+
+* Treat lines that begin with a list character as their own paragraph
 
 Algorithm
 ---------

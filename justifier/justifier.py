@@ -212,20 +212,21 @@ def create_folded_para(dest: Generator):
             # (Initially, this is done with simple spaces but should use a
             # selection of weighted tweaks instead)
             while delta > 0:
-                # First, pick words that end with "." -- count might be > delta
-                full_stop_wordnums = [n for n in range(num_words - 1) if line_chunks[n].word.endswith(".")]
+                # First, pick words that end with "." etc. -- count might be > delta
+                ## sentence_end_pred()
+                sentence_end_wordnums = [n for n in range(num_words - 1) if line_chunks[n].word.endswith((".", "!", "?"))]
                 # Then just pick random words
-                if num_words > 1 and delta > len(full_stop_wordnums):
-                    sample_count = min(num_words - 1, delta - len(full_stop_wordnums))
+                if num_words > 1 and delta > len(sentence_end_wordnums):
+                    sample_count = min(num_words - 1, delta - len(sentence_end_wordnums))
                     random_wordnums = random.sample(range(num_words - 1), sample_count)
                 else:
                     # Slice the array if not all needed
-                    if len(full_stop_wordnums) > delta:
-                        full_stop_wordnums = full_stop_wordnums[0:delta]
+                    if len(sentence_end_wordnums) > delta:
+                        sentence_end_wordnums = sentence_end_wordnums[0:delta]
 
                     random_wordnums = []
 
-                all_wordnums = full_stop_wordnums + random_wordnums
+                all_wordnums = sentence_end_wordnums + random_wordnums
                 if all_wordnums:
                     delta -= len(all_wordnums)
 

@@ -7,7 +7,7 @@ import logging
 # *** DEFINITIONS ***
 __author__ = """Alastair Irvine"""
 __email__ = 'alastair@plug.org.au'
-__version__ = '0.9.0'
+__version__ = '0.10.0'
 
 root_logger = None  # logging.Logger
 params = {}
