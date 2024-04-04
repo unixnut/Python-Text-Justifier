@@ -3,7 +3,7 @@ Python Text Justifier
 =====================
 
 
-.. image:: https://img.shields.io/pypi/v/justifier.svg
+.. image:: https://img.shields.io/pypi/v/text-justifier.svg
         :target: https://pypi.python.org/pypi/text-justifier
 
 .. image:: https://readthedocs.org/projects/text-justifier/badge/?version=latest
